@@ -4,10 +4,17 @@ import sys
 import argparse
 import os
 
+def is_ip_address(value):
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return value.startswith("(") and value.endswith(")") and is_ip_address(value[1:-1])
+
 def run_nmap_scan(target, detailed=False):
     try:
         if detailed:
-            command = ["nmap", "-sV", "-A", "-T5", "-p22,139", "--open", target]
+            command = ["nmap", "-sV", "-A", "-O", "-T5", "-p-", "--open", target]
         else:
             command = ["nmap", "-sn", target]
 
@@ -26,21 +33,27 @@ def parse_live_hosts(nmap_output):
             live_hosts.append(ip)
     return live_hosts
 
+def extract_hostname_and_os(detailed_output):
+    hostname = "        Unknown"
+    os = "Unknown"
+    for line in detailed_output.split("\n"):
+        if "Nmap scan report for" in line:
+            if not is_ip_address(hostname):
+                hostname = line.split(" ")[-1]
+        if "Aggressive OS guesses:" in line:
+            os = line.split(":")[1].strip().split(",")[0]
+    return hostname, os
+
 def generate_dot_file(target, live_hosts, detailed_outputs):
     dot_filename = f"{target.replace('/', '_')}.dot"
-    if os.path.exists(dot_filename):
-        with open(dot_filename, 'r') as f:
-            existing_content = f.read()
-    else:
-        existing_content = ""
-
     with open(dot_filename, 'w') as f:
         f.write("digraph network_map {\n")
         f.write(f'  "{target}" [shape=box];\n')
         for host, details in zip(live_hosts, detailed_outputs):
+            hostname, os = extract_hostname_and_os(details)
             f.write(f'  "{target}" -> "{host}";\n')
             f.write(f'  subgraph cluster_{host.replace(".", "_")} {{\n')
-            f.write(f'    label="{host}";\n')
+            f.write(f'    label="{hostname} - {os}";\n')
             f.write(f'    "{host}" [shape=ellipse];\n')
 
             for line in details.split("\n"):
@@ -57,7 +70,7 @@ def generate_dot_file(target, live_hosts, detailed_outputs):
 
             f.write("  }\n")
         f.write("}\n")
-
+        print("Network mapping completed. DOT file generated.")
 
 def main():
     parser = argparse.ArgumentParser(description="Network Mapper")
@@ -90,7 +103,6 @@ def main():
         for host in live_hosts:
             print(f"Running detailed scan on {host}")
             detailed_output = run_nmap_scan(host, detailed=True)
-            print(f"Details for {host}:\n{detailed_output}")
             detailed_outputs.append(detailed_output)
 
         generate_dot_file(target, live_hosts, detailed_outputs)
