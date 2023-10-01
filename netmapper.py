@@ -3,9 +3,14 @@ import ipaddress
 import sys
 import argparse
 
-def run_nmap_scan(target):
+def run_nmap_scan(target, detailed=False):
     try:
-        result = subprocess.check_output(["nmap", "-sn", target], universal_newlines=True)
+        if detailed:
+            command = ["nmap", "-sV", "-A", "-T4", "-p22,139", target]
+        else:
+            command = ["nmap", "-sn", target]
+        
+        result = subprocess.check_output(command, universal_newlines=True)
         return result
     except Exception as e:
         print(f"An error occurred while running nmap: {e}")
@@ -46,6 +51,11 @@ def main():
         live_hosts = parse_live_hosts(nmap_output)
 
         print(f"Live hosts in {target}: {live_hosts}")
+
+        for host in live_hosts:
+            print(f"Running detailed scan on {host}")
+            detailed_output = run_nmap_scan(host, detailed=True)
+            print(f"Details for {host}:\n{detailed_output}")
 
 if __name__ == "__main__":
     main()
