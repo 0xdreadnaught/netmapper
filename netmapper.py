@@ -2,14 +2,15 @@ import subprocess
 import ipaddress
 import sys
 import argparse
+import os
 
 def run_nmap_scan(target, detailed=False):
     try:
         if detailed:
-            command = ["nmap", "-sV", "-A", "-T4", "-p22,139", target]
+            command = ["nmap", "-sV", "-A", "-T5", "-p22,139", "--open", target]
         else:
             command = ["nmap", "-sn", target]
-        
+
         result = subprocess.check_output(command, universal_newlines=True)
         return result
     except Exception as e:
@@ -24,6 +25,39 @@ def parse_live_hosts(nmap_output):
             ip = line.split(" ")[-1].strip("()")
             live_hosts.append(ip)
     return live_hosts
+
+def generate_dot_file(target, live_hosts, detailed_outputs):
+    dot_filename = f"{target.replace('/', '_')}.dot"
+    if os.path.exists(dot_filename):
+        with open(dot_filename, 'r') as f:
+            existing_content = f.read()
+    else:
+        existing_content = ""
+
+    with open(dot_filename, 'w') as f:
+        f.write("digraph network_map {\n")
+        f.write(f'  "{target}" [shape=box];\n')
+        for host, details in zip(live_hosts, detailed_outputs):
+            f.write(f'  "{target}" -> "{host}";\n')
+            f.write(f'  subgraph cluster_{host.replace(".", "_")} {{\n')
+            f.write(f'    label="{host}";\n')
+            f.write(f'    "{host}" [shape=ellipse];\n')
+
+            for line in details.split("\n"):
+                if "/tcp" in line:
+                    tokens = line.split()
+                    if len(tokens) >= 4:
+                        port, state, service, version = tokens[:4]
+                    else:
+                        port, state, service = tokens[:3]
+                        version = "Unknown"
+
+                    f.write(f'    "{host}:{port}" [shape=record, label="{{{port} | {service} | {version}}}"];\n')
+                    f.write(f'    "{host}" -> "{host}:{port}";\n')
+
+            f.write("  }\n")
+        f.write("}\n")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Network Mapper")
@@ -52,11 +86,14 @@ def main():
 
         print(f"Live hosts in {target}: {live_hosts}")
 
+        detailed_outputs = []
         for host in live_hosts:
             print(f"Running detailed scan on {host}")
             detailed_output = run_nmap_scan(host, detailed=True)
             print(f"Details for {host}:\n{detailed_output}")
+            detailed_outputs.append(detailed_output)
+
+        generate_dot_file(target, live_hosts, detailed_outputs)
 
 if __name__ == "__main__":
     main()
-
